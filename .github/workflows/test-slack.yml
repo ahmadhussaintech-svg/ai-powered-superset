@@ -1,0 +1,14 @@
+name: Test Slack Webhook
+on:
+  workflow_dispatch: {}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send test message
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":":wave: Hello from the Superset Issue Triage Bot! This is a test message to confirm the Slack webhook integration is working."}' \
+            "$SLACK_WEBHOOK_URL"
