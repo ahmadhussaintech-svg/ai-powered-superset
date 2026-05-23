@@ -1,0 +1,41 @@
+name: Upstream Issue Triage
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Every 15 minutes
+  workflow_dispatch: {}      # Allow manual trigger
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r scripts/issue_triage/requirements.txt
+
+      - name: Restore poll state
+        uses: actions/cache@v4
+        with:
+          path: scripts/issue_triage/.last_poll_timestamp
+          key: issue-triage-state-${{ github.run_id }}
+          restore-keys: |
+            issue-triage-state-
+
+      - name: Run issue triage
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: python scripts/issue_triage/triage.py
+
+      - name: Save poll state
+        uses: actions/cache/save@v4
+        with:
+          path: scripts/issue_triage/.last_poll_timestamp
+          key: issue-triage-state-${{ github.run_id }}
