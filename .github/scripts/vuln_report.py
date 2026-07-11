@@ -21,7 +21,7 @@ The script maintains a small JSON state file (persisted across runs via the
 GitHub Actions cache) that stamps each CRITICAL finding with a first-seen
 timestamp. This lets it compute remediation latency (MTTR), backlog aging and
 flow metrics purely from the scan history -- without depending on any PR
-convention. PR-based metrics (remediation PRs, auto-approved, rework) are
+convention. PR-based metrics (remediation PRs, straight-through, rework) are
 derived from the GitHub API and rely on the `security` label convention; when
 they cannot be computed they are reported as "n/a" rather than guessed.
 """
@@ -234,7 +234,7 @@ def pr_metrics(gh: GitHub, window_start: datetime) -> dict[str, Any]:
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
         return {"available": False}
 
-    auto_approved = 0
+    straight_through = 0
     rework = 0
     for pr in merged_prs:
         try:
@@ -246,22 +246,19 @@ def pr_metrics(gh: GitHub, window_start: datetime) -> dict[str, Any]:
             and (r.get("user") or {}).get("type") != "Bot"
             for r in reviews
         )
-        bot_approval = any(
-            r.get("state") == "APPROVED" and (r.get("user") or {}).get("type") == "Bot"
-            for r in reviews
-        )
-        any_changes = any(r.get("state") == "CHANGES_REQUESTED" for r in reviews)
-        if any_changes:
+        if human_changes:
+            # A human asked for changes before the fix merged.
             rework += 1
-        if bot_approval and not human_changes:
-            auto_approved += 1
+        else:
+            # Merged without any human requesting changes -> straight-through.
+            straight_through += 1
 
     merged = len(merged_prs)
     return {
         "available": True,
         "opened": opened,
         "merged": merged,
-        "auto_approved": auto_approved,
+        "straight_through": straight_through,
         "rework": rework,
         "rework_rate": (rework / merged) if merged else 0.0,
     }
@@ -320,11 +317,16 @@ def _section_prs(prs: dict[str, Any]) -> list[str]:
     if prs.get("available"):
         lines.append(f"• Opened in window: *{prs['opened']}*")
         lines.append(
-            f"• Merged: *{prs['merged']}*  |  auto-approved: *{prs['auto_approved']}*"
+            f"• Merged: *{prs['merged']}*  "
+            f"|  straight-through: *{prs['straight_through']}*"
             f"  |  required rework: *{prs['rework']}*"
         )
         if prs["merged"]:
-            lines.append(f"• Rework rate: *{prs['rework_rate'] * 100:.0f}%*")
+            straight_rate = prs["straight_through"] / prs["merged"] * 100
+            lines.append(
+                f"• Straight-through rate: *{straight_rate:.0f}%*  "
+                f"|  rework rate: *{prs['rework_rate'] * 100:.0f}%*"
+            )
     else:
         lines.append("• n/a (GitHub API unavailable or no `security`-labelled PRs)")
     lines.append("")
